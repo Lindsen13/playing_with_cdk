@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { CdkPipelinesStack } from '../lib/cdk-pipelines-stack';
+/* Folling import defines which stack we're building: ofcourse, we could also build all of them at once */
+import { CdkPipelinesStack } from '../lib/fargate';
 
 const app = new cdk.App();
 new CdkPipelinesStack(app, 'CdkPipelinesStack', {
