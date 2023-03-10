@@ -1,5 +1,6 @@
-FROM node:14
+FROM python:3.7-slim
 WORKDIR /usr/src/app
-COPY index.js ./
-EXPOSE 80
-CMD ["node", "index.js"]
+
+COPY . .
+
+ENTRYPOINT [ "python", "main.py" ]

@@ -12,20 +12,16 @@ export class CdkPipelinesStack extends cdk.Stack {
         // a simple python task to save data to a s2 bucket
 
         // Creating a cluster
-        const cluster = new ecs.Cluster(this, "ecs-cluster");
+        const cluster = new ecs.Cluster(this, "ClusterForPipelines");
 
-        // Add a service to the cluster
-        const fargate = new ecs_patterns.ApplicationLoadBalancedFargateService(this, 'MyFargateService', {
-            cluster: cluster,
-            cpu: 512,
-            desiredCount: 1,
-            taskImageOptions: {
-                image: ecs.ContainerImage.fromAsset('src/fargate/'),
-                environment: {
-                    "name": "Serverless Fargate",
-                },
-            },
-            memoryLimitMiB: 2048,
+        // Create a Fargate Task
+        const fargateTask = new ecs.FargateTaskDefinition(this, 'HelloWorldTask');
+
+        const container = fargateTask.addContainer('HelloWorldContainer', {
+            image: ecs.ContainerImage.fromAsset('src/fargate/'),
+            logging: ecs.LogDriver.awsLogs({
+                streamPrefix: 'HelloWorldContainerLogs'
+            })
         });
     }
 }
