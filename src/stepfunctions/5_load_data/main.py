@@ -22,4 +22,4 @@ def handler(event, context):
         payload = temp_file.read().decode("utf-8")
 
     logging.info(f'Following should be inserted into neo4j:\n{payload}')
-    return 200, {"Status":"Done","output_file":None}
+    return 200, {"Status":"Done","output_file":None,"input_file":filename}

@@ -19,6 +19,20 @@ export class CdkPipelinesStack extends cdk.Stack {
       autoDeleteObjects: true
     });
 
+    // Raw bucket
+    const RawBucket = new s3.Bucket(this, 'raw_bucket', {
+      versioned: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true
+    });
+
+    // Staging Bucket
+    const StagingBucket = new s3.Bucket(this, 'staging_bucket', {
+      versioned: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true
+    });
+
     // Curated Bucket
     const CuratedBucket = new s3.Bucket(this, 'curated_bucket', {
       versioned: true,
@@ -29,10 +43,46 @@ export class CdkPipelinesStack extends cdk.Stack {
     // Function to transform data and stores into the staging bucket
     const LoadData = new lambda.Function(this, 'load_data', {
       runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset('src/stepfunctions/1_load_data'),
+      code: lambda.Code.fromAsset('src/stepfunctions/5_load_data/'),
       handler: 'main.handler',
-      environment: { 'source_bucket': SourceBucket.bucketName, 'destination_bucket': CuratedBucket.bucketName },
-      description: 'Lambda that fetches data from the source bucket and stores it into the cureated bucket'
+      environment: { 'source_bucket': CuratedBucket.bucketName, 'destination_bucket': '' },
+      description: 'Lambda that runs Cyper statements and inserts data into Neo4j'
+    });
+
+    // Function to transform data and stores into the staging bucket
+    const CalculdateCDC = new lambda.Function(this, 'calculate_cdc', {
+      runtime: lambda.Runtime.PYTHON_3_9,
+      code: lambda.Code.fromAsset('src/stepfunctions/4_calculate_cdc'),
+      handler: 'main.handler',
+      environment: { 'source_bucket': StagingBucket.bucketName, 'destination_bucket': CuratedBucket.bucketName },
+      description: 'Lambda that calculates changes in the  data and places it into the curated bucket',
+    });
+
+    // Function to run data quality checks on the data
+    const QualityCheck = new lambda.Function(this, 'quality_check', {
+      runtime: lambda.Runtime.PYTHON_3_9,
+      code: lambda.Code.fromAsset('src/stepfunctions/3_quality_check'),
+      handler: 'main.handler',
+      environment: { 'source_bucket': StagingBucket.bucketName, 'destination_bucket': '' },
+      description: 'Lambda that runs data quality checks',
+    });
+
+    // Function to transform data and stores into the staging bucket
+    const TransformData = new lambda.Function(this, 'transform_data', {
+      runtime: lambda.Runtime.PYTHON_3_9,
+      code: lambda.Code.fromAsset('src/stepfunctions/2_transform_data'),
+      handler: 'main.handler',
+      environment: { 'source_bucket': RawBucket.bucketName, 'destination_bucket': StagingBucket.bucketName },
+      description: 'Lambda that transforms data and places it into the staging bucket',
+    });
+
+    // Function to validate data and stores into the raw bucket
+    const ValidateData = new lambda.Function(this, 'validate_data', {
+      runtime: lambda.Runtime.PYTHON_3_9,
+      code: lambda.Code.fromAsset('src/stepfunctions/1_validate_data'),
+      handler: 'main.handler',
+      environment: { 'source_bucket': SourceBucket.bucketName, 'destination_bucket': RawBucket.bucketName },
+      description: 'Lambda that validates data and places it into the raw bucket',
     });
 
     // Function to fetch and store data into source
@@ -41,45 +91,88 @@ export class CdkPipelinesStack extends cdk.Stack {
       code: lambda.Code.fromAsset('src/stepfunctions/0_fetch_data'),
       handler: 'main.handler',
       environment: { 'source_bucket': '', 'destination_bucket': SourceBucket.bucketName },
-      description: 'Lambda that fetches data and stores it into the source bucket',
+      description: 'Lambda that fetches data from a datasource and places it into the source bucket',
     });
 
     // Add proper accesses to the buckets.
     SourceBucket.grantReadWrite(FetchData);
-    SourceBucket.grantReadWrite(LoadData);
-    CuratedBucket.grantReadWrite(LoadData);
+    SourceBucket.grantRead(ValidateData);
+    RawBucket.grantReadWrite(ValidateData);
+    RawBucket.grantRead(TransformData);
+    StagingBucket.grantReadWrite(TransformData);
+    StagingBucket.grantRead(QualityCheck);
+    StagingBucket.grantRead(CalculdateCDC);
+    CuratedBucket.grantReadWrite(CalculdateCDC);
+    CuratedBucket.grantRead(LoadData);
 
-    // Creating steps for our Step Function State Machine:
+    // Step 1: Fetch data
     const FetchDataTask = new tasks.LambdaInvoke(this, 'fetch_data_task', {
       lambdaFunction: FetchData
     });
 
-    const DataArrivedInSourceS3 = new sfn.Pass(this, 'Data_arrived_in_source_s3');
+    const DataArrivedInSource = new sfn.Pass(this, 'Data_arrived_in_source_bucket');
 
+    // Step 2: Validate Data
+    const ValidateDataTask = new tasks.LambdaInvoke(this, 'validate_data_task', {
+      lambdaFunction: ValidateData
+    });
+
+    const DataValidated = new sfn.Pass(this, 'Data_validated');
+    
+    // Step 3: Transform Data
+    const TransformDataTask = new tasks.LambdaInvoke(this, 'transform_data_task', {
+      lambdaFunction: TransformData
+    });
+
+    const DataTransformed = new sfn.Pass(this, 'Data_transformed');
+    
+    // Step 4: Quality Check Data
+    const QualityCheckTask = new tasks.LambdaInvoke(this, 'quality_check_data_task', {
+      lambdaFunction: TransformData
+    });
+
+    const QualityChecked = new sfn.Pass(this, 'Data_quality_checked');
+    
+    // Step 5: Calculate CDC
+    const CalculdateCDCTask = new tasks.LambdaInvoke(this, 'calculate_cdc_task', {
+      lambdaFunction: CalculdateCDC
+    });
+
+    const CDCCalculated = new sfn.Pass(this, 'CDC_Calculated');
+    
+    // Step 6: Calculate CDC
     const LoadDataTask = new tasks.LambdaInvoke(this, 'load_data_task', {
       lambdaFunction: LoadData
     });
 
-    const DataArrivedInCurratedS3 = new sfn.Pass(this, 'Data_arrived_in_currated_s3');
+    const DataLoaded = new sfn.Pass(this, 'Data_loaded');
 
     // Arranging steps in correct order
     const definition = FetchDataTask
-      .next(DataArrivedInSourceS3)
+      .next(DataArrivedInSource)
+      .next(ValidateDataTask)
+      .next(DataValidated)
+      .next(TransformDataTask)
+      .next(DataTransformed)
+      .next(QualityCheckTask)
+      .next(QualityChecked)
+      .next(CalculdateCDCTask)
+      .next(CDCCalculated)
       .next(LoadDataTask)
-      .next(DataArrivedInCurratedS3)
+      .next(DataLoaded)
 
     // Create a Stepfunction statemachine with the assigned order of steps:
-    const StepFunctionStateMachine = new sfn.StateMachine(this, 'ExampleStateMachineFromCDK', {
+    const StateMachineSamplePipeline = new sfn.StateMachine(this, 'StateMachineSamplePipeline', {
       definition
     });
 
     // Create a cronn event to happen every minute (can be found in event bridge rules)
     const CronnEvent = new events.Rule(this, 'Rule', {
-      schedule: events.Schedule.expression('cron(* * * * ? *)'),
+      schedule: events.Schedule.expression('cron(0 10 * * ? *)'),
     });
 
     // Add cronn event to the Stepfunction state machine
-    CronnEvent.addTarget(new targets.SfnStateMachine(StepFunctionStateMachine));
+    CronnEvent.addTarget(new targets.SfnStateMachine(StateMachineSamplePipeline));
   }
 }
 

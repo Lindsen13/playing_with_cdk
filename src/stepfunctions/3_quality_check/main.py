@@ -2,12 +2,16 @@ import os
 import logging
 import boto3
 import tempfile
-from typing import Union
+import random
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 def handler(event, context):
+    if random.randint(0,2)==1:
+        raise ValueError(r"This function fails 50% of the time!")
+    else:
+        logger.info('I did not fail this time :-)')
     source_bucket = os.environ.get("source_bucket", None)
     destination_bucket = os.environ.get("destination_bucket", None)
     logger.info(f'{source_bucket=}, {destination_bucket=}')
@@ -23,8 +27,8 @@ def handler(event, context):
         payload = temp_file.read().decode("utf-8")
     
     s3_client.put_object(
-        Body=f"This is done in the 3rd step!\n{payload}",
+        Body=f"This is done in the 4th step!\n{payload}",
         Bucket=destination_bucket,
         Key=filename,
     )
-    return 200, {"Status":"Done","output_file":filename}
+    return 200, {"Status":"Done","output_file":filename,"input_file":filename}

@@ -23,8 +23,8 @@ def handler(event, context):
         payload = temp_file.read().decode("utf-8")
     
     s3_client.put_object(
-        Body=f"This is done in the 2nd step!\n{payload}",
+        Body=f"This is done in the 3rd step!\n{payload}",
         Bucket=destination_bucket,
         Key=filename,
     )
-    return 200, {"Status":"Done","output_file":filename}
+    return 200, {"Status":"Done","output_file":filename,"input_file":filename}
